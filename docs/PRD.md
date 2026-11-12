@@ -30,11 +30,11 @@ wrong in five ways.
    a refused batch, a bad key or a timeout leaves no trace, and a refused
    batch is retried every run forever.
 
-Measured in production on a news site publishing about 1,700 posts a day:
-one batched request every 15 minutes replaced about 1,700 single requests a
-day. When the site came out of a long noindex period, the queue held
-thousands of URLs banked while it was dark, many of them by then withdrawn
-or noindexed; only a send-time re-check kept them from going out.
+Measured in production on a site that publishes many hundreds of posts a
+day: one batched request every 15 minutes replaced one request per post.
+When the site came out of a long noindex period, the queue held a large
+number of URLs banked while it was dark, many of them by then withdrawn or
+noindexed; only a send-time re-check kept them from going out.
 
 ## 2. Goals and non-goals
 
