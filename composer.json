@@ -1,0 +1,41 @@
+{
+    "name": "indianopinion/indexnow-batch",
+    "description": "WordPress plugin that queues URLs on publish and update, re-checks them at send time, and submits them to IndexNow in batches with retries and a log.",
+    "type": "wordpress-plugin",
+    "license": "MIT",
+    "keywords": ["wordpress", "indexnow", "seo", "bing", "search"],
+    "homepage": "https://github.com/IndianOpinion/indexnow-batch",
+    "support": {
+        "issues": "https://github.com/IndianOpinion/indexnow-batch/issues",
+        "source": "https://github.com/IndianOpinion/indexnow-batch"
+    },
+    "authors": [
+        { "name": "Indian Opinion", "email": "hello@indianopinion.org" }
+    ],
+    "require": {
+        "php": ">=8.1"
+    },
+    "autoload": {
+        "psr-4": { "IndianOpinion\\IndexNowBatch\\": "src/" }
+    },
+    "autoload-dev": {
+        "psr-4": { "IndianOpinion\\IndexNowBatch\\Tests\\": "tests/" }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "phpunit",
+        "stan": "phpstan analyse --no-progress --memory-limit=1G",
+        "cs": "phpcs",
+        "cs-fix": "phpcbf",
+        "check": ["@cs", "@stan", "@test"]
+    },
+    "require-dev": {
+        "php-stubs/wordpress-stubs": "^6.9",
+        "php-stubs/wp-cli-stubs": "^2.12",
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^10.5",
+        "squizlabs/php_codesniffer": "^3.10"
+    }
+}
