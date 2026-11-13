@@ -41,7 +41,7 @@ final class WpdbRepositoryTest extends TestCase
         $this->assertStringStartsWith('INSERT INTO wp_indexnow_batch_queue', $insert);
         $this->assertStringContainsString("'https://example.com/it\\'s/'", $insert);
         $this->assertStringContainsString(', 7, ', $insert);
-        $this->assertStringContainsString('ON DUPLICATE KEY UPDATE post_id = COALESCE(VALUES(post_id), post_id)', $insert);
+        $this->assertStringContainsString('ON DUPLICATE KEY UPDATE post_id = COALESCE(VALUES(post_id), post_id), queued_at = VALUES(queued_at)', $insert);
     }
 
     public function testEnqueueSetsNotBeforeAndEvictsOverTheCap(): void
@@ -102,7 +102,10 @@ final class WpdbRepositoryTest extends TestCase
         $this->db->queries = [];
         $repo->moveTo(QueueRow::SENT, $rows, 200, 1767225600);
         $this->assertSame('START TRANSACTION', $this->db->queries[0]);
-        $this->assertStringContainsString('DELETE FROM wp_indexnow_batch_queue WHERE site_id = 1 AND id IN (4)', $this->db->queries[1]);
+        $this->assertStringContainsString(
+            "DELETE FROM wp_indexnow_batch_queue WHERE site_id = 1 AND state = 'pending' AND ((id = 4 AND queued_at = '2026-01-01 00:00:00'))",
+            $this->db->queries[1]
+        );
         $this->assertStringContainsString("'sent'", $this->db->queries[2]);
         $this->assertStringContainsString('ON DUPLICATE KEY UPDATE', $this->db->queries[2]);
         $this->assertSame('COMMIT', $this->db->queries[3]);
@@ -115,6 +118,36 @@ final class WpdbRepositoryTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         $repo->moveTo('pending', $rows, 200, 0);
+    }
+
+    public function testMoveToRollsBackAndThrowsWhenTheInsertFails(): void
+    {
+        $this->db->responder = function (string $method, string $sql) {
+            if (str_starts_with($sql, 'INSERT')) {
+                $this->db->last_error = 'Lock wait timeout exceeded';
+
+                return false;
+            }
+
+            return 1;
+        };
+        $row = new QueueRow(4, 'https://example.com/a/', 'h', 7, QueueRow::PENDING, 1767225600);
+        try {
+            (new WpdbQueueRepository($this->db))->moveTo(QueueRow::SENT, [$row], 200, 1767225600);
+            $this->fail('moveTo() did not throw');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Lock wait timeout exceeded', $e->getMessage());
+        }
+        $this->assertSame('ROLLBACK', end($this->db->queries));
+        $this->assertNotContains('COMMIT', $this->db->queries);
+    }
+
+    public function testVerifyRequiresTheUniqueKey(): void
+    {
+        WpStubs::$uniqueKeys = ['PRIMARY'];
+        $this->expectException(\IndianOpinion\IndexNowBatch\Queue\SchemaException::class);
+        $this->expectExceptionMessage('unique key site_hash_state');
+        (new Schema($this->db))->verify();
     }
 
     public function testRowsAreScopedToTheCurrentSite(): void

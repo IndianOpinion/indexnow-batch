@@ -88,6 +88,8 @@ final class WpStubs
     public static array $networkActive = [];
     /** @var list<string> Columns SHOW COLUMNS reports. */
     public static array $columns = [];
+    /** @var list<string> Unique key names SHOW INDEX reports. */
+    public static array $uniqueKeys = [];
 
     public static function reset(): void
     {
@@ -124,6 +126,7 @@ final class WpStubs
         self::$categories = [];
         self::$networkActive = [];
         self::$columns = \IndianOpinion\IndexNowBatch\Queue\Schema::COLUMNS;
+        self::$uniqueKeys = ['PRIMARY', \IndianOpinion\IndexNowBatch\Queue\Schema::UNIQUE_KEY];
         $GLOBALS['wpdb'] = new wpdb();
     }
 
@@ -288,6 +291,9 @@ class wpdb
         }
         if (str_starts_with($sql, 'SHOW COLUMNS')) {
             return WpStubs::$columns;
+        }
+        if (str_starts_with($sql, 'SHOW INDEX')) {
+            return WpStubs::$uniqueKeys;
         }
 
         return null;

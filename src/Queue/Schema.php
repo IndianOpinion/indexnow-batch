@@ -24,6 +24,9 @@ final class Schema
         'not_before', 'attempts', 'last_http', 'sent_at', 'retry_group',
     ];
 
+    /** The unique key every upsert depends on. */
+    public const UNIQUE_KEY = 'site_hash_state';
+
     public function __construct(private \wpdb $db)
     {
     }
@@ -53,7 +56,7 @@ final class Schema
   sent_at datetime NULL DEFAULT NULL,
   retry_group varchar(40) NULL DEFAULT NULL,
   PRIMARY KEY  (id),
-  UNIQUE KEY site_hash_state (site_id,url_hash,state),
+  UNIQUE KEY " . self::UNIQUE_KEY . " (site_id,url_hash,state),
   KEY site_state_due (site_id,state,not_before,queued_at),
   KEY post_id (post_id)
 ) {$charset};";
@@ -86,6 +89,18 @@ final class Schema
                 'Table %s is missing column(s): %s. Last database error: %s',
                 $table,
                 implode(', ', $missing),
+                $this->db->last_error !== '' ? $this->db->last_error : 'none'
+            ));
+        }
+        // The upsert and the move to sent rely on the unique key. dbDelta
+        // skips an index it cannot add (duplicate rows, for example) without
+        // an error, so check it as well.
+        $unique = array_map('strval', $this->db->get_col("SHOW INDEX FROM `{$table}` WHERE Non_unique = 0", 2));
+        if (!in_array(self::UNIQUE_KEY, $unique, true)) {
+            throw new SchemaException(sprintf(
+                'Table %s is missing the unique key %s. Last database error: %s',
+                $table,
+                self::UNIQUE_KEY,
                 $this->db->last_error !== '' ? $this->db->last_error : 'none'
             ));
         }

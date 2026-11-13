@@ -63,6 +63,7 @@ class MemoryQueueRepository implements QueueRepository
         $existing = $this->find($hash, QueueRow::PENDING);
         if ($existing !== null) {
             $existing->postId = $postId ?? $existing->postId;
+            $existing->queuedAt = $now;
 
             return new EnqueueResult(EnqueueResult::REFRESHED, 0, $notBefore);
         }
@@ -171,9 +172,16 @@ class MemoryQueueRepository implements QueueRepository
 
     public function moveTo(string $state, array $rows, int $http, int $now): void
     {
+        if ($state !== QueueRow::SENT && $state !== QueueRow::FAILED) {
+            throw new \InvalidArgumentException('Unknown state ' . $state);
+        }
         $this->writes++;
         foreach ($rows as $row) {
-            unset($this->rows[$row->id]);
+            // Like the SQL: only a pending row still as it was fetched.
+            $stored = $this->rows[$row->id] ?? null;
+            if ($stored !== null && $stored->state === QueueRow::PENDING && $stored->queuedAt === $row->queuedAt) {
+                unset($this->rows[$row->id]);
+            }
         }
         foreach ($rows as $row) {
             $existing = $this->find($row->hash, $state);

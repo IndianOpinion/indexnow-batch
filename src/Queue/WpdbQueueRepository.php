@@ -56,7 +56,10 @@ final class WpdbQueueRepository implements QueueRepository
         $sql = $this->prepare(
             "INSERT INTO {$this->table} (site_id, url, url_hash, post_id, state, queued_at, not_before, attempts)"
             . " VALUES (%d, %s, %s, {$postSql}, 'pending', %s, {$notBeforeSql}, 0)"
-            . ' ON DUPLICATE KEY UPDATE post_id = COALESCE(VALUES(post_id), post_id)',
+            // A refresh also moves queued_at forward. moveTo() deletes a row only
+            // when queued_at is unchanged, so a save that lands while the row is
+            // in flight leaves it pending instead of being lost (lesson 8).
+            . ' ON DUPLICATE KEY UPDATE post_id = COALESCE(VALUES(post_id), post_id), queued_at = VALUES(queued_at)',
             $site,
             $url,
             $hash,
@@ -204,35 +207,64 @@ final class WpdbQueueRepository implements QueueRepository
             throw new \InvalidArgumentException('Unknown state ' . $state);
         }
         $site = $this->site();
-        $ids = array_map(static fn (QueueRow $row): int => $row->id, $rows);
 
-        $this->db->query('START TRANSACTION');
-        $this->delete($ids);
-        foreach (array_chunk($rows, self::INSERT_CHUNK) as $chunk) {
-            $values = [];
-            foreach ($chunk as $row) {
-                $postSql = $row->postId === null ? 'NULL' : (string) max(0, $row->postId);
-                $values[] = $this->prepare(
-                    "(%d, %s, %s, {$postSql}, %s, %s, NULL, %d, %d, %s, NULL)",
-                    $site,
-                    $row->url,
-                    $row->hash,
-                    $state,
-                    QueueRow::toDb($row->queuedAt),
-                    $row->attempts,
-                    $http,
-                    QueueRow::toDb($now)
+        $this->mustQuery('START TRANSACTION', 'start transaction');
+        try {
+            foreach (array_chunk($rows, self::INSERT_CHUNK) as $chunk) {
+                // Only rows still as they were fetched: a pending row refreshed
+                // while the request was in flight stays pending.
+                $match = [];
+                foreach ($chunk as $row) {
+                    $match[] = $this->prepare('(id = %d AND queued_at = %s)', $row->id, QueueRow::toDb($row->queuedAt));
+                }
+                $this->mustQuery(
+                    $this->prepare("DELETE FROM {$this->table} WHERE site_id = %d AND state = 'pending' AND (", $site)
+                    . implode(' OR ', $match) . ')',
+                    'delete moved rows'
+                );
+
+                $values = [];
+                foreach ($chunk as $row) {
+                    $postSql = $row->postId === null ? 'NULL' : (string) max(0, $row->postId);
+                    $values[] = $this->prepare(
+                        "(%d, %s, %s, {$postSql}, %s, %s, NULL, %d, %d, %s, NULL)",
+                        $site,
+                        $row->url,
+                        $row->hash,
+                        $state,
+                        QueueRow::toDb($row->queuedAt),
+                        $row->attempts,
+                        $http,
+                        QueueRow::toDb($now)
+                    );
+                }
+                $this->mustQuery(
+                    "INSERT INTO {$this->table}"
+                    . ' (site_id, url, url_hash, post_id, state, queued_at, not_before, attempts, last_http, sent_at, retry_group)'
+                    . ' VALUES ' . implode(', ', $values)
+                    . ' ON DUPLICATE KEY UPDATE url = VALUES(url), post_id = VALUES(post_id), attempts = VALUES(attempts),'
+                    . ' last_http = VALUES(last_http), sent_at = VALUES(sent_at)',
+                    'insert ' . $state . ' rows'
                 );
             }
-            $this->db->query(
-                "INSERT INTO {$this->table}"
-                . ' (site_id, url, url_hash, post_id, state, queued_at, not_before, attempts, last_http, sent_at, retry_group)'
-                . ' VALUES ' . implode(', ', $values)
-                . ' ON DUPLICATE KEY UPDATE url = VALUES(url), post_id = VALUES(post_id), attempts = VALUES(attempts),'
-                . ' last_http = VALUES(last_http), sent_at = VALUES(sent_at)'
-            );
+            $this->mustQuery('COMMIT', 'commit');
+        } catch (\Throwable $e) {
+            $this->db->query('ROLLBACK');
+
+            throw $e;
         }
-        $this->db->query('COMMIT');
+    }
+
+    /**
+     * Runs a statement whose failure must not be ignored.
+     *
+     * @throws \RuntimeException With the database error.
+     */
+    private function mustQuery(string $sql, string $what): void
+    {
+        if ($this->db->query($sql) === false) {
+            throw new \RuntimeException('queue table: ' . $this->error($what));
+        }
     }
 
     public function recordAttempt(array $ids, int $http): void
