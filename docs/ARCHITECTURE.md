@@ -62,8 +62,10 @@ a request is in flight are never lost (lesson 8).
 
 **Q1. Storage: a custom table, created on activation and verified with
 SHOW COLUMNS.** `Schema::install()` runs `dbDelta` and then
-`Schema::verify()`, which reads `SHOW COLUMNS` and throws
-`SchemaException` naming any missing column. The error is stored in an
+`Schema::verify()`, which reads `SHOW COLUMNS` and `SHOW INDEX` and
+throws `SchemaException` naming any missing column or a missing unique
+key (`dbDelta` skips an index it cannot add without an error, and every
+upsert depends on that key). The error is stored in an
 option; queueing refuses with reason `schema`, the flush returns the
 outcome `schema_error` (exit 1 in the CLI), and the status page shows it.
 Reason: `dbDelta` has silently skipped column adds in production, and a
@@ -127,7 +129,11 @@ has its own table" in section 10.
    delete by ID plus a multi-row `INSERT ... ON DUPLICATE KEY UPDATE`, in
    a transaction, so an older sent row for the same URL is replaced
    rather than colliding. `url_hash` is `char(40)` hex SHA-1, readable in
-   a SQL console.
+   a SQL console. An enqueue that refreshes a pending row also moves its
+   `queued_at` forward, and the move deletes a pending row only when its
+   `queued_at` is unchanged since it was fetched. So a save that lands
+   while that row's request is in flight leaves it pending, and the next
+   run defers it by the resubmit interval instead of losing it (lesson 8).
 2. **Enqueue is one indexed read plus one upsert.** The read returns the
    last send time for the hash (rule 21) and the pending count (rule 39)
    in one statement. The PRD budget says "no extra SELECT"; one indexed
@@ -146,7 +152,10 @@ has its own table" in section 10.
    `indexnow_batch_dropped` does not fire for them.
 5. **Extra record fields and outcome.** `deferred`, `warnings`,
    `dry_run`, `forced`, `resume_at` (when backing off) and `note` (on
-   202). Outcome `schema_error` (ruling Q1).
+   202). Outcome `schema_error` (ruling Q1). Outcome `error` when a
+   database statement fails mid-run or a hook throws: the move to `sent`
+   or `failed` is rolled back, the lock is released, the run record is
+   still written, and the CLI exits 1.
 6. **Outcome of a multi-batch run** is the worst batch: `key_unverified`,
    then `transport_error`, then `refused`, then `accepted_pending`, then
    `submitted`. 403 records `key_unverified`; 429 and 5xx record

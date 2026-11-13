@@ -67,8 +67,8 @@ final class RootCommand
     /**
      * Runs a flush now.
      *
-     * Exits 1 when the outcome is transport_error, refused, key_unverified
-     * or schema_error, so a system cron wrapper can alert.
+     * Exits 1 when the outcome is transport_error, refused, key_unverified,
+     * schema_error or error, so a system cron wrapper can alert.
      *
      * ## OPTIONS
      *

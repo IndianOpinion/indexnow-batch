@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace IndianOpinion\IndexNowBatch\Cli;
 
+use IndianOpinion\IndexNowBatch\Key\KeyManager;
 use IndianOpinion\IndexNowBatch\Key\KeyVerifier;
 use IndianOpinion\IndexNowBatch\Key\PhysicalKeyFile;
 use IndianOpinion\IndexNowBatch\Plugin;
@@ -51,7 +52,8 @@ final class KeyCommand
         $verifier = $this->plugin->verifier();
         $result = $verifier->check($key, $url);
         $verifier->store($key, $url, $result['state'], $result['detail']);
-        $message = sprintf('%s: %s%s', $url, $result['state'], $result['detail'] !== '' ? ' (' . $result['detail'] . ')' : '');
+        $shown = $this->plugin->rules()->keyLocation(KeyManager::mask($key));
+        $message = sprintf('%s: %s%s', $shown, $result['state'], $result['detail'] !== '' ? ' (' . $result['detail'] . ')' : '');
         if ($result['state'] === KeyVerifier::UNVERIFIED) {
             \WP_CLI::error($message);
         }
@@ -84,7 +86,7 @@ final class KeyCommand
 
             return;
         }
-        \WP_CLI::success('New key ' . \IndianOpinion\IndexNowBatch\Key\KeyManager::mask($key) . ' in place. Verification cleared.');
+        \WP_CLI::success('New key ' . KeyManager::mask($key) . ' in place. Verification cleared.');
     }
 
     /**

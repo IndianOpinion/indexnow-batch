@@ -100,6 +100,13 @@ final class Flusher
         }
         try {
             $outcome = $this->runLocked($now, $force, $limit);
+        } catch (\Throwable $e) {
+            // A database failure or a throwing hook still ends in one run
+            // record (rule 40), and the CLI exits 1 on it.
+            $this->record['error'] = '';
+            $this->setError(get_class($e) . ': ' . $e->getMessage());
+            $this->logger->error('flush failed: ' . (string) $this->record['error']);
+            $outcome = 'error';
         } finally {
             if (!$this->dry) {
                 $this->lock->release();
@@ -589,6 +596,8 @@ final class Flusher
         if ($error === '') {
             return;
         }
+        // Mask the key before truncating, so a cut cannot leave part of it.
+        $error = $this->scrub($error);
         if (preg_match('/^.{0,160}/su', $error, $m) === 1) {
             $error = $m[0];
         } else {
@@ -602,15 +611,17 @@ final class Flusher
      */
     private function scrubKey(): void
     {
-        $key = $this->keys->usableKey();
-        if ($key === null) {
-            return;
-        }
-        $mask = KeyManager::mask($key);
-        $this->record['error'] = str_replace($key, $mask, (string) $this->record['error']);
+        $this->record['error'] = $this->scrub((string) $this->record['error']);
         foreach ($this->record['warnings'] as $i => $warning) {
-            $this->record['warnings'][$i] = str_replace($key, $mask, (string) $warning);
+            $this->record['warnings'][$i] = $this->scrub((string) $warning);
         }
+    }
+
+    private function scrub(string $text): string
+    {
+        $key = $this->keys->usableKey();
+
+        return $key === null ? $text : str_replace($key, KeyManager::mask($key), $text);
     }
 
     private function finish(string $outcome, float $started): FlushResult

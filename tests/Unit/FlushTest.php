@@ -7,6 +7,8 @@ namespace IndianOpinion\IndexNowBatch\Tests\Unit;
 use IndianOpinion\IndexNowBatch\Flush\Lock;
 use IndianOpinion\IndexNowBatch\Options;
 use IndianOpinion\IndexNowBatch\Queue\QueueRow;
+use IndianOpinion\IndexNowBatch\Tests\Support\MemoryQueueRepository;
+use IndianOpinion\IndexNowBatch\Url\UrlRules;
 use IndianOpinion\IndexNowBatch\Tests\TestCase;
 use WpStubs;
 
@@ -405,6 +407,41 @@ final class FlushTest extends TestCase
         $this->assertEquals(['gone' => 1, 'expired' => 1], $result->record['dropped']);
         $this->assertSame($before, serialize($this->repo->rows));
         $this->assertSame([], WpStubs::$posts_sent);
+        $this->assertSame([], $this->locks->rows);
+    }
+
+    public function testSaveDuringTheRequestIsKeptPendingNotLost(): void
+    {
+        $url = $this->url(90);
+        $this->repo->add($url, null, $this->clock->now());
+        add_filter('indexnow_batch_request_args', function (array $args) use ($url): array {
+            // Another request queues the same URL while this one is in flight.
+            $this->clock->advance(5);
+            $this->repo->enqueue($url, UrlRules::hash($url), null, $this->clock->now(), 0, 10000);
+
+            return $args;
+        });
+        $record = $this->flush();
+        $this->assertSame('submitted', $record['outcome']);
+        $this->assertCount(1, $this->repo->inState(QueueRow::SENT));
+        $this->assertSame([$url], $this->pendingUrls(), 'the save that landed mid-request is still queued');
+    }
+
+    public function testDatabaseFailureStillWritesOneRecordAndReleasesTheLock(): void
+    {
+        $repo = new class () extends MemoryQueueRepository {
+            public function moveTo(string $state, array $rows, int $http, int $now): void
+            {
+                throw new \RuntimeException('queue table: insert sent rows failed: Deadlock found');
+            }
+        };
+        $this->plugin->useRepository($repo);
+        $repo->add($this->url(91), null, $this->clock->now());
+        $result = $this->plugin->flush([]);
+        $this->assertSame('error', $result->outcome());
+        $this->assertTrue($result->isFailure());
+        $this->assertStringContainsString('Deadlock found', $result->record['error']);
+        $this->assertSame('error', $this->plugin->runLog()->last()['outcome']);
         $this->assertSame([], $this->locks->rows);
     }
 }

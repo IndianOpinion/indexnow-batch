@@ -99,6 +99,18 @@ final class KeyVerifier
      */
     public function check(string $key, string $keyUrl): array
     {
+        $result = $this->fetch($key, $keyUrl);
+        // The detail is stored, shown and logged: never with the key in it.
+        $result['detail'] = str_replace($key, KeyManager::mask($key), $result['detail']);
+
+        return $result;
+    }
+
+    /**
+     * @return array{state: string, detail: string}
+     */
+    private function fetch(string $key, string $keyUrl): array
+    {
         $url = $keyUrl;
         $host = strtolower((string) parse_url($keyUrl, PHP_URL_HOST));
         for ($hop = 0; $hop < 2; $hop++) {

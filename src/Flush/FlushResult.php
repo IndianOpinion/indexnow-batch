@@ -25,6 +25,6 @@ final class FlushResult
     /** Whether a system cron wrapper should treat this run as a failure. */
     public function isFailure(): bool
     {
-        return in_array($this->outcome(), ['transport_error', 'refused', 'key_unverified', 'schema_error'], true);
+        return in_array($this->outcome(), ['transport_error', 'refused', 'key_unverified', 'schema_error', 'error'], true);
     }
 }

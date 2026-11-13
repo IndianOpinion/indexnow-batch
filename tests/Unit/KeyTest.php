@@ -167,6 +167,17 @@ final class KeyTest extends TestCase
         $this->assertSame(KeyVerifier::UNVERIFIED, $this->plugin->verifier()->check($key, $url)['state']);
     }
 
+    public function testVerifierDetailNeverCarriesTheKey(): void
+    {
+        $key = $this->plugin->keys()->key();
+        $url = 'https://example.com/' . $key . '.txt';
+        WpStubs::$getResponder = static fn () => WpStubs::response(301, '', ['location' => 'https://other.example/' . $key . '.txt']);
+        $result = $this->plugin->verifier()->check($key, $url);
+        $this->assertSame(KeyVerifier::UNVERIFIED, $result['state']);
+        $this->assertStringContainsString('other.example', $result['detail']);
+        $this->assertStringNotContainsString($key, $result['detail']);
+    }
+
     public function testT9SameHostRedirectIsFollowedOnce(): void
     {
         $key = $this->plugin->keys()->key();

@@ -128,7 +128,7 @@ indexnow_batch_key(): string;
 | `wp indexnow log [--limit=<n>] [--format=table\|json]` | Recent run records, newest first |
 | `wp indexnow pause [--for=<seconds>]` / `resume` | Bulk import pause |
 
-Exit code 0 on success and 1 on any error. `flush` also exits 1 when the run outcome is `transport_error`, `refused`, `key_unverified` or `schema_error`, so a system cron wrapper can alert ([`examples/system-cron.sh`](examples/system-cron.sh)).
+Exit code 0 on success and 1 on any error. `flush` also exits 1 when the run outcome is `transport_error`, `refused`, `key_unverified`, `schema_error` or `error`, so a system cron wrapper can alert ([`examples/system-cron.sh`](examples/system-cron.sh)).
 
 ## How it works
 
