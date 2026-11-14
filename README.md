@@ -172,4 +172,4 @@ The dynamic key file needs `.txt` requests to reach PHP when no such file exists
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). To contribute, read [CONTRIBUTING.md](CONTRIBUTING.md).
